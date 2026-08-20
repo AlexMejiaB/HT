@@ -42,6 +42,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+/src/generated/prisma
+
 # cliente de Prisma: se regenera con `pnpm db:generate`, no se versiona
 /src/generated/
 
@@ -52,14 +54,3 @@ skills-lock.json
 
 # planes de trabajo locales
 /.claude/
-
-# ---- Aplica a cualquier subproyecto (p. ej. veloce/) ----
-# Los patrones de arriba van anclados a la raíz con "/", así que no cubrirían
-# veloce/node_modules ni veloce/.next. Estos sí, en cualquier nivel.
-node_modules/
-.next/
-src/generated/
-.agents/
-.windsurf/
-.claude/
-skills-lock.json

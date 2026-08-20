@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/*
+  Identidad Veloce: negro, rojo de marca y blanco. La jerarquía la carga la
+  tipografía (pesos altos, tracking cerrado), no el color.
+*/
+@theme {
+  --color-marca: #f4453c;
+  --color-marca-suave: #fdecec;
+  --color-marca-oscuro: #c2251d;
+
+  --color-tinta: #050505;
+  --color-tinta-suave: #1a1a1a;
+  --color-papel: #ffffff;
+  --color-papel-tenue: #f6f6f6;
+  --color-borde: #e4e4e4;
+  --color-borde-oscuro: #2a2a2a;
+  --color-apagado: #6b6b6b;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --text-display: clamp(2.75rem, 7vw, 5.5rem);
+  --text-titulo: clamp(2rem, 4.5vw, 3.5rem);
+
+  --animate-entrada: entrada 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes entrada {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+body {
+  background: var(--color-papel);
+  color: var(--color-tinta);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Titulares al estilo del documento comercial: muy apretados y pesados. */
+.titular {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+
+.etiqueta {
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-marca);
+}
+
+/* Foco visible y consistente en todo lo interactivo, para accesibilidad. */
+:where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--color-marca);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

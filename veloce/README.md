@@ -1,20 +1,9 @@
-# Highticket
-
-> **Este repositorio contiene dos marcas.**
->
-> | Carpeta | Marca | Qué es |
-> |---|---|---|
-> | raíz | **Highticket** | El SaaS que se vende por autoservicio |
-> | [`veloce/`](veloce/) | **Veloce AI** | Marca hermana, cliente activo |
->
-> Son aplicaciones **independientes**: cada una con su `package.json`, su base
-> de datos y su despliegue. Comparten arquitectura, no infraestructura.
-> Ver [`veloce/ESTADO.md`](veloce/ESTADO.md).
+# Veloce AI
 
 Landing comercial + SaaS multi-tenant de agentes de IA para e-commerce.
-Corresponde a las **Fases 1 y 2 (Highticket Responde y Operador)** del brief de producto.
+Corresponde a las **Fases 1 y 2 (Veloce Responde y Operador)** del brief de producto.
 
-`veloce-ai` es el proyecto gemelo: misma oferta, marca e identidad propias,
+`highticket` es el proyecto gemelo: misma oferta, marca e identidad propias,
 código independiente.
 
 ## Stack
@@ -41,8 +30,8 @@ pnpm test                 # 29 pruebas, sin base de datos
 En desarrollo la base corre en podman rootless, no en el Postgres del sistema:
 
 ```bash
-podman run -d --name highticket-pg \
-  -e POSTGRES_USER=highticket -e POSTGRES_PASSWORD=highticket -e POSTGRES_DB=highticket \
+podman run -d --name veloce-pg \
+  -e POSTGRES_USER=veloce -e POSTGRES_PASSWORD=veloce -e POSTGRES_DB=veloce_ai \
   -p 5433:5432 docker.io/library/postgres:17-alpine
 ```
 
