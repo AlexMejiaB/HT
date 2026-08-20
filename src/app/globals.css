@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/*
+  Identidad HighTicket, tomada del logotipo: negro puro, blanco y un dorado
+  metálico como único acento.
+
+  El sitio vive en oscuro. La elegancia viene del vacío, del tracking amplio y
+  de titulares grandes en peso ligero — no del peso ni de la saturación. El
+  dorado se usa con cuentagotas: en cuanto se reparte, deja de leerse como oro.
+*/
+@theme {
+  --color-marca: #d3af35;
+  --color-marca-claro: #e5c76a;
+  --color-marca-oscuro: #a88620;
+  --color-marca-tenue: #1c1707;
+
+  /* La superficie base es negra y el texto claro: tokens invertidos respecto
+     a un sitio en claro, a propósito. */
+  --color-papel: #000000;
+  --color-papel-tenue: #0c0c0c;
+  --color-papel-alto: #141414;
+  --color-tinta: #fcfcfc;
+  --color-tinta-suave: #d6d6d6;
+  --color-borde: #242424;
+  --color-borde-claro: #333333;
+  --color-apagado: #8b8b8b;
+
+  --font-display: var(--font-jost), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-jost), ui-sans-serif, system-ui, sans-serif;
+  /* Sólo para el logotipo, que en el original es una grotesca. */
+  --font-marca: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --text-display: clamp(2.75rem, 8vw, 6.5rem);
+  --text-titulo: clamp(2rem, 5vw, 3.75rem);
+
+  --animate-surgir: surgir 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+body {
+  background: var(--color-papel);
+  color: var(--color-tinta);
+  font-family: var(--font-sans);
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+  Geométrica ligera a tamaño grande. El peso 200-300 es lo que separa un
+  titular caro de uno barato: el bold a este tamaño se ve estridente.
+*/
+.titular {
+  font-family: var(--font-display);
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+/* Énfasis dentro de un titular, en dorado y peso normal. */
+.acento {
+  color: var(--color-marca);
+  font-weight: 400;
+}
+
+.etiqueta {
+  font-weight: 400;
+  font-size: 0.6875rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--color-marca);
+}
+
+/* Filete fino: separador editorial, nunca un borde grueso. */
+.filete {
+  height: 1px;
+  background: linear-gradient(to right, var(--color-marca) 0%, transparent 70%);
+}
+
+/* Cifras grandes en tabular para que los precios se alineen entre tarjetas. */
+.cifra {
+  font-variant-numeric: tabular-nums;
+  font-weight: 200;
+  letter-spacing: -0.02em;
+}
+
+:where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 1px solid var(--color-marca);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

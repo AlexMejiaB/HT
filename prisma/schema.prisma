@@ -1,0 +1,493 @@
+// Schema multi-tenant de Veloce AI.
+// Regla transversal: todo dato de negocio cuelga de un Tenant y toda consulta
+// filtra por tenantId. No hay tablas globales con datos de clientes.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- Tenants
+
+enum Plan {
+  RESPONDE
+  OPERADOR
+  AUTOPILOT
+}
+
+/// Plataforma de e-commerce del cliente. Fase 2 del brief: lectura de
+/// catálogo, inventario y estatus de pedido desde la fuente real.
+enum TipoTienda {
+  NINGUNA
+  SHOPIFY
+  WOOCOMMERCE
+  TIENDANUBE
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  nombre    String
+  plan      Plan     @default(RESPONDE)
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now())
+  actualEn  DateTime @updatedAt
+
+  // Identidad conversacional configurada por cliente.
+  tonoMarca       String @default("Cercano, directo y profesional. Tutea al cliente.")
+  mensajeBienvenida String @default("¡Hola! ¿En qué te puedo ayudar?")
+
+  // Credenciales de WhatsApp Cloud API. El token va cifrado en reposo:
+  // nunca se guarda en claro ni se devuelve al panel.
+  waPhoneNumberId    String? @unique
+  waNumeroVisible    String?
+  waTokenCifrado     String?
+  waVerifyTokenHash  String?
+
+  /// Cuenta de Instagram (Fase 2). El webhook enruta por este id cuando el
+  /// mensaje llega por Instagram en vez de WhatsApp.
+  igCuentaId      String? @unique
+  igTokenCifrado  String?
+
+  // Política de envíos y horarios, en texto plano configurable por el cliente.
+  politicaEnvios      String?
+  politicaCambios     String?
+  politicaDevoluciones String?
+  horarios            String?
+
+  // Umbral de confianza: por debajo de esto el agente escala en vez de responder.
+  umbralConfianza Float @default(0.7)
+
+  /// Stock por debajo del cual se avisa al equipo (Fase 3).
+  umbralInventarioBajo Int @default(3)
+
+  // ---- Configuración del modelo, por cliente ----
+  // Sobreescriben el valor global del entorno cuando están definidas.
+  llmModelo       String?
+  llmTemperatura  Float?
+  /// none | low | medium | high. Los modelos que razonan gastan tokens
+  /// pensando; para clasificar y redactar dos frases no hace falta.
+  llmRazonamiento String?
+
+  /// Reglas propias del negocio que se suman al prompt. NO pueden saltarse los
+  /// guardrails: esos se evalúan en código, fuera del alcance del prompt.
+  instruccionesExtra String?
+
+  /// Tope mensual. Al superarlo el agente escala a una persona en vez de
+  /// seguir gastando: quedarse sin saldo a media conversación es peor que
+  /// entregar el caso a tiempo.
+  limiteMensajesMes Int?
+
+  /// Credenciales del proveedor de facturación (CFDI 4.0), cifradas.
+  facturaProveedor    String?
+  facturaUsuario      String?
+  facturaSecretoCifrado String?
+  facturaSandbox      Boolean @default(true)
+
+  // Conector de tienda. Las credenciales van cifradas igual que el token de
+  // WhatsApp: son llaves de terceros con acceso a pedidos reales.
+  tiendaTipo          TipoTienda @default(NINGUNA)
+  tiendaDominio       String?
+  tiendaTokenCifrado  String?
+  /// WooCommerce autentica con par consumer key/secret; aquí va el secret.
+  tiendaSecretoCifrado String?
+
+  usuarios       Usuario[]
+  productos      Producto[]
+  faqs           Faq[]
+  contactos      Contacto[]
+  conversaciones Conversacion[]
+  leads          Lead[]
+  escalamientos  Escalamiento[]
+  contactosEquipo ContactoEquipo[]
+  auditoria      EventoAuditoria[]
+  idempotencia   ClaveIdempotencia[]
+  aprobaciones   Aprobacion[]
+  lineas         LineaProducto[]
+  ejemplos       EjemploRespuesta[]
+  uso            UsoMensual[]
+
+  @@index([activo])
+}
+
+// A quién se avisa cuando el agente escala un caso.
+model ContactoEquipo {
+  id       String  @id @default(cuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nombre   String
+  telefono String
+  email    String?
+  activo   Boolean @default(true)
+
+  @@index([tenantId, activo])
+}
+
+// ---------------------------------------------------------------- Panel
+
+enum RolUsuario {
+  DUENO
+  AGENTE
+  SOPORTE_VELOCE
+}
+
+model Usuario {
+  id           String     @id @default(cuid())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  passwordHash String
+  nombre       String
+  rol          RolUsuario @default(DUENO)
+  activo       Boolean    @default(true)
+  ultimoAcceso DateTime?
+  creadoEn     DateTime   @default(now())
+
+  // El email es único dentro del tenant, no globalmente: la misma persona
+  // puede administrar dos tiendas distintas.
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ------------------------------------------------- Base de conocimiento
+
+/// Línea de producto o marca dentro de un mismo negocio.
+///
+/// Un tenant puede vender varias marcas con tono, políticas y catálogo
+/// distintos. El subcontexto de la línea se inyecta sólo cuando el cliente
+/// pregunta por un producto de ESA línea, así el prompt no carga las reglas de
+/// todas las marcas en cada mensaje.
+model LineaProducto {
+  id       String  @id @default(cuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nombre   String
+  slug     String
+
+  /// El subcontexto: reglas, tono y detalles propios de esta línea.
+  contexto String
+
+  /// Si ninguna línea coincide con el producto mencionado, se usa la marcada
+  /// por defecto. Sin ella, el agente responde sólo con el contexto general.
+  porDefecto Boolean @default(false)
+  activo     Boolean @default(true)
+  creadoEn   DateTime @default(now())
+
+  productos Producto[]
+  ejemplos  EjemploRespuesta[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, activo])
+}
+
+/// Pares pregunta/respuesta que enseñan el estilo al agente.
+/// Mostrar un ejemplo funciona mejor que describir el tono con adjetivos.
+model EjemploRespuesta {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Null = aplica a todo el negocio; con línea = sólo a esa marca.
+  lineaId String?
+  linea   LineaProducto? @relation(fields: [lineaId], references: [id], onDelete: SetNull)
+
+  pregunta  String
+  respuesta String
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now())
+
+  @@index([tenantId, activo])
+}
+
+/// Consumo por mes, para el tope de gasto. El periodo es "YYYY-MM".
+model UsoMensual {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  periodo  String
+
+  mensajes      Int @default(0)
+  tokensEntrada Int @default(0)
+  tokensSalida  Int @default(0)
+
+  actualEn DateTime @updatedAt
+
+  @@unique([tenantId, periodo])
+}
+
+// Fuente estructurada de la verdad. El agente sólo puede afirmar precios,
+// stock y políticas leyéndolos de aquí; nunca los infiere.
+model Producto {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sku         String
+  nombre      String
+  descripcion String?
+  precioCentavos Int
+  moneda      String   @default("MXN")
+  stock       Int      @default(0)
+  activo      Boolean  @default(true)
+  // Origen del dato: carga manual, Google Sheets/CSV o conector de tienda.
+  fuente      String   @default("manual")
+  actualEn    DateTime @updatedAt
+
+  /// Línea o marca a la que pertenece. Determina qué subcontexto se inyecta.
+  lineaId String?
+  linea   LineaProducto? @relation(fields: [lineaId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, activo])
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pregunta  String
+  respuesta String
+  etiquetas String[] @default([])
+  activo    Boolean  @default(true)
+  actualEn  DateTime @updatedAt
+
+  @@index([tenantId, activo])
+}
+
+// ---------------------------------------------------------- Conversación
+
+enum Canal {
+  WHATSAPP
+  INSTAGRAM
+}
+
+enum Intencion {
+  PRODUCTO
+  PRECIO_STOCK
+  ENVIO
+  ESTATUS_PEDIDO
+  DEVOLUCION
+  LEAD_CAMPANA
+  HUMANO
+  QUEJA
+  OTRO
+}
+
+enum EstadoConversacion {
+  ABIERTA
+  ESCALADA
+  CERRADA
+}
+
+model Contacto {
+  id       String  @id @default(cuid())
+  tenantId String
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  telefono String
+  nombre   String?
+  creadoEn DateTime @default(now())
+
+  conversaciones Conversacion[]
+  leads          Lead[]
+
+  @@unique([tenantId, telefono])
+  @@index([tenantId])
+}
+
+model Conversacion {
+  id         String             @id @default(cuid())
+  tenantId   String
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactoId String
+  contacto   Contacto           @relation(fields: [contactoId], references: [id], onDelete: Cascade)
+  canal      Canal              @default(WHATSAPP)
+  estado     EstadoConversacion @default(ABIERTA)
+  intencion  Intencion?
+  resumen    String?
+  creadoEn   DateTime           @default(now())
+  actualEn   DateTime           @updatedAt
+
+  // Para medir tiempo de primera respuesta, una de las métricas del brief.
+  primeraRespuestaMs Int?
+
+  /// Etiquetas operativas de Fase 2: venta, pedido, devolución, incidencia o
+  /// humano. Se acumulan a lo largo de la conversación.
+  etiquetas String[] @default([])
+
+  mensajes      Mensaje[]
+  escalamientos Escalamiento[]
+  leads         Lead[]
+  aprobaciones  Aprobacion[]
+
+  @@index([tenantId, estado])
+  @@index([tenantId, creadoEn])
+}
+
+enum DireccionMensaje {
+  ENTRANTE
+  SALIENTE
+}
+
+model Mensaje {
+  id             String           @id @default(cuid())
+  conversacionId String
+  conversacion   Conversacion     @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  direccion      DireccionMensaje
+  texto          String
+  intencion      Intencion?
+  confianza      Float?
+  // Marca los mensajes redactados por el agente frente a los de una persona.
+  generadoPorIA  Boolean          @default(false)
+
+  // ID de mensaje de Meta. Único para descartar reentregas del webhook:
+  // Meta reintenta y no queremos contestar dos veces lo mismo.
+  waMessageId String?  @unique
+  creadoEn    DateTime @default(now())
+
+  @@index([conversacionId, creadoEn])
+}
+
+// ---------------------------------------------------------- Resultados
+
+model Lead {
+  id             String    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactoId     String
+  contacto       Contacto  @relation(fields: [contactoId], references: [id], onDelete: Cascade)
+  conversacionId String?
+  conversacion   Conversacion? @relation(fields: [conversacionId], references: [id], onDelete: SetNull)
+
+  nombre          String?
+  telefono        String
+  productoInteres String?
+  intencion       Intencion?
+  resumen         String?
+  // Campaña de Meta de la que llegó, cuando el mensaje la trae como referral.
+  origenCampana   String?
+  creadoEn        DateTime @default(now())
+
+  @@index([tenantId, creadoEn])
+}
+
+enum EstadoEscalamiento {
+  PENDIENTE
+  ATENDIDO
+}
+
+model Escalamiento {
+  id             String             @id @default(cuid())
+  tenantId       String
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversacionId String
+  conversacion   Conversacion       @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+  motivo         String
+  resumen        String
+  accionSugerida String?
+  referencia     String?
+  estado         EstadoEscalamiento @default(PENDIENTE)
+  creadoEn       DateTime           @default(now())
+  atendidoEn     DateTime?
+
+  @@index([tenantId, estado])
+}
+
+// ------------------------------------------------------------ Aprobaciones
+
+/// Nivel de riesgo de una acción operativa (Fase 3).
+///
+/// Las proporciones sanas son ~80/15/5. Si la mayoría de acciones caen en
+/// BLOQUEO, el alcance del agente está mal planteado.
+enum NivelAprobacion {
+  /// Reversible, de sólo lectura o interna. Se ejecuta al instante.
+  AUTOMATICO
+  /// Impacto medio. Se encola; al vencer el plazo ESCALA, nunca se auto-aprueba.
+  REVISION
+  /// Irreversible o mueve dinero. Sin plazo: no ocurre hasta que alguien dice sí.
+  BLOQUEO
+}
+
+enum EstadoAprobacion {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  EJECUTADA
+  FALLIDA
+  /// Venció el plazo de REVISION y se escaló a una persona.
+  ESCALADA
+}
+
+/// Una acción operativa que el agente quiere ejecutar.
+///
+/// La solicitud se persiste ANTES de ejecutar nada. El ejecutor lee de aquí,
+/// nunca recibe la orden directamente del modelo.
+model Aprobacion {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Identificador de la acción, p. ej. "emitir_factura".
+  accion String
+  nivel  NivelAprobacion
+  estado EstadoAprobacion @default(PENDIENTE)
+
+  /// Argumentos ya validados. Es lo único que el ejecutor puede usar.
+  argumentos Json
+  /// Contexto legible para quien aprueba: sin esto no puede decidir en dos minutos.
+  contexto   String
+
+  conversacionId String?
+  conversacion   Conversacion? @relation(fields: [conversacionId], references: [id], onDelete: SetNull)
+
+  /// Clave de idempotencia de la ejecución. Un reintento nunca actúa dos veces.
+  claveIdempotencia String @unique
+
+  solicitadaEn DateTime  @default(now())
+  /// Sólo para REVISION: al vencer, escala. BLOQUEO no tiene vencimiento.
+  venceEn      DateTime?
+
+  resueltaPor String?
+  resueltaEn  DateTime?
+  comentario  String?
+
+  resultado Json?
+  error     String?
+
+  @@index([tenantId, estado])
+  @@index([estado, venceEn])
+}
+
+// ------------------------------------------------- Auditoría e idempotencia
+
+// Bitácora de acciones sensibles. El brief exige registro confiable y
+// revisable de todo lo que el agente hizo o intentó hacer.
+model EventoAuditoria {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor     String
+  accion    String
+  recurso   String?
+  detalle   Json?
+  creadoEn  DateTime @default(now())
+
+  @@index([tenantId, creadoEn])
+}
+
+// Toda escritura con efecto externo (pedido, factura, cobro) pasa por aquí
+// antes de ejecutarse, para que un reintento nunca la duplique.
+model ClaveIdempotencia {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clave     String
+  operacion String
+  resultado Json?
+  creadoEn  DateTime @default(now())
+
+  @@unique([tenantId, clave])
+  @@index([tenantId, creadoEn])
+}
